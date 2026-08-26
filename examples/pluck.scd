@@ -1,7 +1,7 @@
 // ---- define the pseudo-UGen -------------------------------------------------
 (
 UDef(\pluck, ar: {
-    |in, freq, decay, coef = 0.9, dist = 1, feedFunc = nil|
+    |in, freq, decay, coef = 0.9, dist = 1, pluckDetune = 0.12, midEQ = 1, midEQRate = 2, feedFunc = nil|
     
     // SETTINGS
     var samples = 44100;
@@ -12,7 +12,7 @@ UDef(\pluck, ar: {
     var delayTime = 6.collect {
         K2A.ar(freq)
             .lag(Rand(0.001, 0.02))
-            * (\pluckDetune.kr(0.12) * LFDNoise3.ar(1/16)).midiratio
+            * (pluckDetune * LFDNoise3.ar(1/16)).midiratio
     }.reciprocal;
     var feed;
     var delays = delayTime / 1;
@@ -30,7 +30,7 @@ UDef(\pluck, ar: {
     // waveshaping, one-pole damping, and exponential decay. Override by passing
     // your own feedFunc(in, coef, delay, decay) with the same shape.
     feedFunc = feedFunc ?? {{
-        |in, coef, delay, decay|
+        |in, coef, delay, decay, midEQ, midEQRate|
         in = LeakDC.ar(in);
         in = in.asArray;
         delay = delay.asArray;
@@ -39,10 +39,10 @@ UDef(\pluck, ar: {
             in = MidEQ.ar(
                 in * -1.dbamp / 4,
                 4.collect {
-                    LFDNoise3.kr(\midEQRate.kr(2)).exprange(20, 8000)
+                    LFDNoise3.kr(midEQRate).exprange(20, 8000)
                 },
                 0.6,
-                \midEQ.kr(1).lag(0.5),
+                midEQ.lag(0.5),
             ).sum;
             in = blend(
                 in,
@@ -60,7 +60,7 @@ UDef(\pluck, ar: {
         BufRd.ar(1, buf.wrapAt(i), readPhase, interpolation: 4);
     };
     
-    feed = feedFunc.(feed, coef, delays, decay);
+    feed = feedFunc.(feed, coef, delays, decay, midEQ, midEQRate);
     feed.assertChannels(6);
     
     feed.size.do {
@@ -72,64 +72,6 @@ UDef(\pluck, ar: {
     feed.sum;
 });
 )
-
-// ---- play it ----------------------------------------------------------------
-// Excite the string with periodic impulses and let it ring.
-(
-{
-    var trig = Impulse.ar(1) + Dust.ar(5.5);
-    var sig = UDef(\pluck).ar(
-        in: Decay.ar(trig, 0.1) * ClipNoise.ar * 0.5,
-        freq: TChoose.ar(trig, DC.ar(2.3 * [40, 110, 166, 110, 112])).lag(0.01),
-        decay: 26,
-        coef: 0.95,
-        dist: 1.2
-    );
-    sig = sig * 0.2;
-    Splay.ar(sig ! 2).sum ! 2;    // mono core -> gentle stereo
-}.play;
-)
-
-// ---- as a SynthDef, driven by a pattern -------------------------------------
-(
-SynthDef(\pluckString, {
-    |out = 0, freq = 220, decay = 6, amp = 0.2, gate = 1|
-    var trig = Impulse.ar(0);      // single excitation at note onset
-    var env = EnvGen.kr(Env.asr(0.001, 1, 2), gate, doneAction: Done.freeSelf);
-    var sig = UDef(\pluck).ar(in: trig, freq: freq, decay: decay, coef: 0.92, dist: 1.5);
-    Out.ar(out, (sig * env * amp) ! 2);
-}).add;
-)
-
-(
-Pbind(
-    instrument: \pluckString,
-    degree: Pseq([0, 2, 4, 5, 7, 4, 2, 0], inf),
-    octave: 4,
-    dur: 0.5,
-    decay: Pwhite(4, 9),
-    amp: 0.25
-).play;
-)
-
-
-/* ============================================================================
-   FOUR VOICES FROM THE "LEOPARD" SYNTH  (reverse-engineered from JS1)
-
-   These reproduce the pluck core of the leopard synth in JS1's final version
-   (acid-wet-stone.scd): a synthetic click/noise burst excites the string, and
-   the "pluck-differencing" idiom runs two copies at different decay times and
-   subtracts them (sigA - sigB) to pull out the in-between resonance. Each Ndef
-   uses the coef / decayMult / dist / boost values from a different JS1 state.
-
-   The original chain used HardCompress + NHHall (both private). Here that tail
-   is rebuilt with stock UGens: JPverb for the reverb and Compander for the
-   glue compression -- the "similar thing" you asked about.
-
-   The reverb tail is stock UGens only. The pluck UDef above uses SoftClipAmp4
-   (BerlachUGens / sc3-plugins) -- same requirement as the UDef itself.
-   Boot the server, then evaluate the setup block, then any voice.
-   ============================================================================ */
 
 // ---- shared building blocks -------------------------------------------------
 (
@@ -143,12 +85,15 @@ Pbind(
 
 // The leopard pluck core: excite -> two plucks at decay*[1,k] -> difference.
 // freqs is an array of candidate pitches; a new one is chosen on each impulse.
-~leopardVoice = { |in, freqs, coef, decayMult, dist, boostDb = 0, decayRatio = 2.66|
+~leopardVoice = { |in, freqs, coef, decayMult, dist, boostDb = 0, decayRatio = 2.66,
+    midEQ = 4, midEQRate = 2, pluckDetune = 0.12|
     var chooseTrig = Impulse.ar(1/8) + Dust.ar(2);
     2.collect {
         var freq = TChoose.ar(chooseTrig, DC.ar(freqs));
-        var sigA = UDef(\pluck).ar(in: in, freq: freq, decay: 3 * decayMult, coef: coef, dist: dist);
-        var sigB = UDef(\pluck).ar(in: in, freq: freq, decay: 3 * decayRatio * decayMult, coef: coef, dist: dist);
+        var sigA = UDef(\pluck).ar(in: in, freq: freq, decay: 3 * decayMult, coef: coef, dist: dist,
+            midEQ: midEQ, midEQRate: midEQRate, pluckDetune: pluckDetune);
+        var sigB = UDef(\pluck).ar(in: in, freq: freq, decay: 3 * decayRatio * decayMult, coef: coef, dist: dist,
+            midEQ: midEQ, midEQRate: midEQRate, pluckDetune: pluckDetune);
         boostDb.dbamp * (sigA - sigB)
     };
 };
@@ -156,9 +101,16 @@ Pbind(
 // Reverb tail: Compander glue (in place of HardCompress) + JPverb (in place of
 // NHHall), plus a darker second reverb send like the original's LPF'd tail.
 ~leopardTail = { |sig, revAmp = 0.1, t60 = 6|
-    sig = sig + (revAmp * JPverb.ar(sig.sum, t60: t60, damp: 0.3, size: 1.6, high: 0.6, highcut: 6000));
-    sig = Compander.ar(sig, sig, thresh: 0.3, slopeBelow: 1, slopeAbove: 1/200, clampTime: 0.01, relaxTime: 0.1);
-    sig = sig + (revAmp * 0.5 * JPverb.ar(LPF.ar(sig, 400).sum, t60: t60 * 1.6, damp: 0.6, size: 2.4));
+    sig = sig + (revAmp * JPverb.ar(-40.dbamp * sig.sum, t60: t60, damp: 0.3, size: 1.6, high: 0.6, highcut: 6000));
+    sig = Compander.ar(
+        sig, sig[0], 
+        thresh: -20.dbamp, 
+        slopeBelow: 1, 
+        slopeAbove: 1/200, 
+        clampTime: 0.01, 
+        relaxTime: 2.1
+    );
+    sig = sig + (revAmp * JPverb.ar(LPF.ar(-40.dbamp * sig, 400).sum, t60: t60 * 1.6, damp: 0.6, size: 2.4));
     Limiter.ar(sig * 0.9);
 };
 )
@@ -170,11 +122,12 @@ Ndef(\leopard1, {
     var in = ~excite.(density: 1.5, bright: 5000, level: 0.5);
     var sig = ~leopardVoice.(
         in: in,
-        freqs: [55, 82.4, 110, 165] * 1.5,     // low, sparse pitch set
+        freqs: [55, 50, 50.2, 65] * 1,     // low, sparse pitch set
         coef: LFTri.ar(0.2).exprange(0.80, 0.86),
         decayMult: 19,
         dist: 0.9,
-        boostDb: -6
+        boostDb: 6,
+        midEQ: 4, midEQRate: 3
     );
     ~leopardTail.(sig, revAmp: 0.18, t60: 9);
 }).play;
@@ -184,14 +137,15 @@ Ndef(\leopard1, {
 // coef sweeps 0.72..0.99, decayMult ~8. Restless, metallic-to-woody morph.
 (
 Ndef(\leopard2, {
-    var in = ~excite.(density: 4, bright: 9000, level: 0.45);
+    var in = ~excite.(density: 14, bright: 9000, level: 0.45);
     var sig = ~leopardVoice.(
         in: in,
         freqs: (Scale.augmented.degrees + 60).midicps,    // augmented harmony
         coef: LFTri.ar(LFDNoise3.ar(1/4).exprange(0.25, 4)).exprange(0.72, 0.99),
         decayMult: LFDNoise3.kr(LFDNoise3.kr(0.5).exprange(0.25, 2)).exprange(5.6, 9.6),
         dist: 0.9,
-        boostDb: -4
+        boostDb: -4,
+        midEQ: 3, midEQRate: 1.2, pluckDetune: 0.2
     );
     ~leopardTail.(sig, revAmp: 0.14, t60: 5);
 }).play;
@@ -208,7 +162,8 @@ Ndef(\leopard3, {
         coef: LFTri.ar(LFDNoise3.ar(1/4).exprange(0.25, 4)).exprange(0.93, 0.99),
         decayMult: LFDNoise3.kr(LFDNoise3.kr(0.25).exprange(0.25, 2)).exprange(6.6, 10),
         dist: 0.98,
-        boostDb: 6
+        boostDb: 6,
+        midEQ: 3.7, midEQRate: 1
     );
     ~leopardTail.(sig, revAmp: 0.1, t60: 4);
 }).play;
@@ -222,11 +177,12 @@ Ndef(\leopard4, {
     var sig = ~leopardVoice.(
         in: in,
         freqs: (Scale.diminished.degrees + 48).midicps,   // diminished, low
-        coef: 0.82,
+        coef: 0.32,
         decayMult: LFDNoise3.kr(0.1).range(18, 26),
         dist: 0.85,
         boostDb: -8,
-        decayRatio: 3.2
+        decayRatio: 3.2,
+        midEQ: 4, midEQRate: 3
     );
     ~leopardTail.(sig, revAmp: 0.28, t60: 14);
 }).play;
