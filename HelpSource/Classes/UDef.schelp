@@ -1,0 +1,137 @@
+TITLE:: UDef
+summary:: Reusable pseudo-UGen definitions, callable like a real UGen.
+categories:: UGens>Synthesis
+related:: Classes/SynthDef, Reference/UGens
+
+DESCRIPTION::
+
+A UDef is a named, reusable sub-graph of UGens that you call just like a real
+UGen. Define one once with an code::ar::, code::kr::, or code::ir:: function, then
+call code::UDef(\name).ar(...):: anywhere inside a link::Classes/SynthDef:: to
+splice that graph in. It is a lightweight alternative to link::Classes/SynthDef#*wrap::
+for factoring out and sharing DSP building blocks.
+
+UDef is a link::Classes/Singleton::, so code::UDef(\name):: always returns the
+same registered instance for a given name -- defining and later fetching use the
+same syntax.
+
+code::
+// define a pseudo-UGen named \saturate
+UDef(\saturate, ar: { |in, amount = 4|
+    (in * amount).tanh / amount.tanh
+});
+
+// use it like any UGen inside a SynthDef
+(
+SynthDef(\driven, { |out = 0, freq = 100|
+    var sig = Saw.ar(freq);
+    sig = UDef(\saturate).ar(sig, amount: 8);
+    Out.ar(out, (sig * 0.2) ! 2)
+}).add;
+)
+::
+
+SUBSECTION:: Multiple rates
+
+A single UDef can define more than one rate. Fetch-and-call picks the rate you ask
+for:
+
+code::
+UDef(\ramp,
+    ar: { |dur = 1| Line.ar(0, 1, dur) },
+    kr: { |dur = 1| Line.kr(0, 1, dur) }
+);
+
+UDef(\ramp).ar(dur: 2);   // audio-rate Line
+UDef(\ramp).kr(dur: 2);   // control-rate Line
+::
+
+SUBSECTION:: Wrapping
+
+link::#-wrap:: derives a new UDef that pre-binds the original's function as a
+code::func:: argument of a wrapper. This lets you build variations that inject the
+base graph into a surrounding network. The wrapper function must take a code::func::
+argument; the original UDef's function of the same rate is bound to it.
+
+code::
+UDef(\osc, ar: { |freq = 440| SinOsc.ar(freq) });
+
+// a wrapper that runs the base graph through a filter
+UDef(\osc).wrap(\filtered, ar: { |func, cutoff = 800|
+    LPF.ar(func.value, cutoff)
+});
+
+UDef('osc.filtered').ar(freq: 220, cutoff: 400);
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+Fetch or create the UDef registered under code::name::. If code::ar::, code::kr::,
+or code::ir:: functions are supplied they are stored (see link::#-set::).
+
+ARGUMENT:: name
+A link::Classes/Symbol:: identifying the UDef.
+
+ARGUMENT:: ar
+A link::Classes/Function:: defining the audio-rate graph.
+
+ARGUMENT:: kr
+A link::Classes/Function:: defining the control-rate graph.
+
+ARGUMENT:: ir
+A link::Classes/Function:: defining the scalar/initialization-rate graph.
+
+returns:: The registered UDef instance.
+
+INSTANCEMETHODS::
+
+METHOD:: ar
+Evaluate the audio-rate function, splicing its UGen graph into the enclosing
+SynthDef. Arguments (positional or keyword) are forwarded to the function.
+
+METHOD:: kr
+As link::#-ar::, for the control-rate function.
+
+METHOD:: ir
+As link::#-ar::, for the scalar-rate function.
+
+METHOD:: arFunc, krFunc, irFunc
+The link::Classes/Function:: defining each rate. Assignable.
+
+METHOD:: arArgs, krArgs, irArgs
+An link::Classes/Event:: of the argument names and default values for each rate's
+function, or code::nil:: if that rate is undefined.
+
+METHOD:: set
+Store the code::ar:: / code::kr:: / code::ir:: functions (only the non-nil ones)
+and record the defining file's path. Called automatically by link::#*new::.
+
+METHOD:: wrap
+Return a new UDef named code::"name.wrapName":: whose rate functions wrap this
+UDef's functions. Each wrapper function receives the original function bound to its
+code::func:: argument. See the discussion above.
+
+ARGUMENT:: wrapName
+A link::Classes/Symbol:: suffixed to this UDef's name for the derived UDef.
+
+ARGUMENT:: ar
+ARGUMENT:: kr
+ARGUMENT:: ir
+Wrapper functions for each rate. Each must take a code::func:: argument.
+
+METHOD:: multichannelExpand
+If code::true::, calling link::#-ar:: / link::#-kr:: / link::#-ir:: with array
+arguments performs multichannel expansion across the arguments (like a real UGen).
+Defaults to code::false::.
+
+METHOD:: path
+The path of the file in which this UDef was last defined.
+
+METHOD:: open
+Open the defining file (link::#-path::) in the editor, if known.
+
+EXAMPLES::
+
+See the code::examples/pluck.scd:: file in this quark for a full
+Karplus-Strong-style plucked string built as a UDef.

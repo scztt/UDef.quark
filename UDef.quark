@@ -1,0 +1,17 @@
+(
+          name: "UDef",
+       summary: "Reusable pseudo-UGen definitions, callable like a real UGen.",
+        author: "scott@artificia.org",
+     copyright: "Frank Scott Carver, 2026",
+       license: "MIT",
+       version: "0.1.0",
+        schelp: "UDef",
+          test: "Test/UDef_unittest.scd",
+           url: "https://github.com/scztt/udef.quark",
+  dependencies: [
+              		"Singleton",
+              		"szlib"
+                ],
+  isCompatible: true,
+         since: "2026"
+)
