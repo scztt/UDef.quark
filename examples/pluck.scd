@@ -87,7 +87,7 @@ UDef(\pluck, ar: {
 // freqs is an array of candidate pitches; a new one is chosen on each impulse.
 ~leopardVoice = { |in, freqs, coef, decayMult, dist, boostDb = 0, decayRatio = 2.66,
     midEQ = 4, midEQRate = 2, pluckDetune = 0.12|
-    var chooseTrig = Impulse.ar(1/8) + Dust.ar(2);
+    var chooseTrig = Impulse.ar(1/8) + Dust.ar(1);
     2.collect {
         var freq = TChoose.ar(chooseTrig, DC.ar(freqs));
         var sigA = UDef(\pluck).ar(in: in, freq: freq, decay: 3 * decayMult, coef: coef, dist: dist,
@@ -116,7 +116,6 @@ UDef(\pluck, ar: {
 )
 
 // ---- Voice 1: state-5 -- mellow, long-ringing, sparse -----------------------
-// coef 0.82, long decayMult (~19), low boost. Slow chiming plucks.
 (
 Ndef(\leopard1, {
     var in = ~excite.(density: 1.5, bright: 5000, level: 0.5);
@@ -137,29 +136,28 @@ Ndef(\leopard1, {
 // coef sweeps 0.72..0.99, decayMult ~8. Restless, metallic-to-woody morph.
 (
 Ndef(\leopard2, {
-    var in = ~excite.(density: 14, bright: 9000, level: 0.45);
+    var in = ~excite.(density: 1, bright: 9000, level: 0.45);
     var sig = ~leopardVoice.(
         in: in,
-        freqs: (Scale.augmented.degrees + 60).midicps,    // augmented harmony
-        coef: LFTri.ar(LFDNoise3.ar(1/4).exprange(0.25, 4)).exprange(0.72, 0.99),
-        decayMult: LFDNoise3.kr(LFDNoise3.kr(0.5).exprange(0.25, 2)).exprange(5.6, 9.6),
-        dist: 0.9,
-        boostDb: -4,
-        midEQ: 3, midEQRate: 1.2, pluckDetune: 0.2
+        freqs: (Scale.augmented.degrees + 40).midicps,    // augmented harmony
+        coef: LFTri.ar(LFDNoise3.ar(1/4).exprange(0.25, 4)).exprange(0.52, 0.99),
+        decayMult: LFDNoise3.kr(LFDNoise3.kr(0.5).exprange(0.25, 2)).exprange(5.6, 19.6),
+        dist: 0.96,
+        boostDb: 4,
+        midEQ: 6, midEQRate: 4, pluckDetune: 0.5
     );
-    ~leopardTail.(sig, revAmp: 0.14, t60: 5);
+    ~leopardTail.(sig, revAmp: 0.6, t60: 15);
 }).play;
 )
 
 // ---- Voice 3: state-4 -- dense, driven, high boost --------------------------
-// coef 0.93..0.99, decayMult 6.6..10, pluckDist 0.98, hot boost. Aggressive.
 (
 Ndef(\leopard3, {
     var in = ~excite.(density: 8, bright: 11000, level: 0.5);
     var sig = ~leopardVoice.(
         in: in,
-        freqs: (Scale.hexSus.degrees + 60).midicps,      // sus/quartal color
-        coef: LFTri.ar(LFDNoise3.ar(1/4).exprange(0.25, 4)).exprange(0.93, 0.99),
+        freqs: (Scale.hexSus.degrees + 30).midicps,      // sus/quartal color
+        coef: LFTri.ar(LFDNoise3.ar(1/4).exprange(1/8, 1)).exprange(0.33, 0.99),
         decayMult: LFDNoise3.kr(LFDNoise3.kr(0.25).exprange(0.25, 2)).exprange(6.6, 10),
         dist: 0.98,
         boostDb: 6,
@@ -170,19 +168,18 @@ Ndef(\leopard3, {
 )
 
 // ---- Voice 4: state-6 -- huge, slow, cavernous ------------------------------
-// coef 0.82, very long decayMult (~19+), big reverb. Bell-like, distant.
 (
 Ndef(\leopard4, {
-    var in = ~excite.(density: 0.8, bright: 4000, level: 0.6);
+    var in = ~excite.(density: 1.8, bright: 4000, level: 0.6);
     var sig = ~leopardVoice.(
         in: in,
-        freqs: (Scale.diminished.degrees + 48).midicps,   // diminished, low
+        freqs: (Scale.diminished.degrees[0,2..] + 48).midicps,   // diminished, low
         coef: 0.32,
         decayMult: LFDNoise3.kr(0.1).range(18, 26),
-        dist: 0.85,
+        dist: 1.0,
         boostDb: -8,
         decayRatio: 3.2,
-        midEQ: 4, midEQRate: 3
+        midEQ: 2, midEQRate: 1
     );
     ~leopardTail.(sig, revAmp: 0.28, t60: 14);
 }).play;
